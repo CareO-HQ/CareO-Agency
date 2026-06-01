@@ -12,7 +12,7 @@ import { Send, Building, ShieldCheck, MailOpen, UserMinus, FileText, CheckCircle
 import { toast } from "sonner";
 import { diagnoseLinkCode } from "@/app/actions/auth-actions";
 
-export default function CareHomesTab() {
+export default function CareHomesTab({ supervisorProfile }: { supervisorProfile: any }) {
   const [loading, setLoading] = useState(true);
   const [careHomes, setCareHomes] = useState<any[]>([]);
   const [availableStaff, setAvailableStaff] = useState<any[]>([]);
@@ -34,6 +34,8 @@ export default function CareHomesTab() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      const agencyName = supervisorProfile?.agency_name;
+
       // 1. Fetch Linkages from agency_linkages
       const { data: linkages, error: linkageError } = await supabase
         .from("agency_linkages")
@@ -55,22 +57,30 @@ export default function CareHomesTab() {
       }
       setCareHomes(homes || []);
 
-      // 2. Fetch Available Agency Staff
-      const { data: staff, error: staffError } = await supabase
+      // 2. Fetch Available Agency Staff belonging to this agency
+      let staffQuery = supabase
         .from("agency_staff")
         .select("id, name, role")
         .eq("status", "available");
+      if (agencyName) {
+        staffQuery = staffQuery.eq("agency_name", agencyName);
+      }
+      const { data: staff, error: staffError } = await staffQuery;
       if (staffError) throw staffError;
       setAvailableStaff(staff || []);
 
       // 3. Fetch Sent Requests and join Care Home details
-      const { data: requests, error: requestsError } = await supabase
+      let requestsQuery = supabase
         .from("agency_requests")
         .select(`
           *,
-          agency_staff:agency_staff_id (name, role, email)
+          agency_staff:agency_staff_id!inner(name, role, email, agency_name)
         `)
         .order("created_at", { ascending: false });
+      if (agencyName) {
+        requestsQuery = requestsQuery.eq("agency_staff.agency_name", agencyName);
+      }
+      const { data: requests, error: requestsError } = await requestsQuery;
 
       if (requestsError) throw requestsError;
 
@@ -106,7 +116,7 @@ export default function CareHomesTab() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [supabase, supervisorProfile]);
 
   useEffect(() => {
     loadData();

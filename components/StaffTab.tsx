@@ -12,13 +12,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Search, UserPlus, FileText, CheckCircle, AlertTriangle, Calendar, Award } from "lucide-react";
 import { toast } from "sonner";
 
-export default function StaffTab() {
+export default function StaffTab({ supervisorProfile }: { supervisorProfile: any }) {
   const [loading, setLoading] = useState(true);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [supervisorId, setSupervisorId] = useState<string | null>(null);
+
+  const supervisorId = supervisorProfile?.id;
+  const supervisorAgencyName = supervisorProfile?.agency_name;
 
   // Add staff modal state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -35,10 +37,18 @@ export default function StaffTab() {
   const fetchStaff = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("agency_staff")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (supervisorAgencyName) {
+        query = query.eq("agency_name", supervisorAgencyName);
+      } else if (supervisorId) {
+        query = query.eq("supervisor_id", supervisorId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setStaffList(data || []);
@@ -51,52 +61,10 @@ export default function StaffTab() {
   };
 
   useEffect(() => {
-    fetchStaff();
-    
-    // Load current supervisor's database ID
-    async function loadSupervisor() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          // 1. Try by auth_user_id
-          let { data, error } = await supabase
-            .from("agency_staff")
-            .select("id, auth_user_id")
-            .eq("auth_user_id", user.id)
-            .maybeSingle();
-
-          if (error) throw error;
-
-          // 2. Fall back to email if auth_user_id is not linked
-          if (!data && user.email) {
-            const { data: emailData, error: emailError } = await supabase
-              .from("agency_staff")
-              .select("id, auth_user_id")
-              .eq("email", user.email)
-              .maybeSingle();
-
-            if (emailError) throw emailError;
-            data = emailData;
-
-            // Auto-sync auth_user_id if found by email but missing auth ID
-            if (data && !data.auth_user_id) {
-              await supabase
-                .from("agency_staff")
-                .update({ auth_user_id: user.id })
-                .eq("id", data.id);
-            }
-          }
-
-          if (data) {
-            setSupervisorId(data.id);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading supervisor context in StaffTab:", err);
-      }
+    if (supervisorProfile) {
+      fetchStaff();
     }
-    loadSupervisor();
-  }, []);
+  }, [supervisorProfile]);
 
   const handleAddStaffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +94,7 @@ export default function StaffTab() {
           skills: skillsArray,
           certifications: certsArray,
           supervisor_id: supervisorId,
+          agency_name: supervisorAgencyName,
           compliance_documents: [
             { type: "DBS Check", status: "verified", date: new Date().toISOString() },
             { type: "Right to Work", status: "verified", date: new Date().toISOString() }

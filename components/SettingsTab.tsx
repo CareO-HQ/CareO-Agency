@@ -10,7 +10,13 @@ import { ShieldCheck, Building, User, Mail, Phone, Save } from "lucide-react";
 import { toast } from "sonner";
 import { checkAgencyNameExists } from "@/app/actions/auth-actions";
 
-export default function SettingsTab({ session }: { session: any }) {
+export default function SettingsTab({ 
+  session, 
+  onProfileUpdate 
+}: { 
+  session: any; 
+  onProfileUpdate: (updatedProfile: any) => void; 
+}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<any>(null);
@@ -115,7 +121,10 @@ export default function SettingsTab({ session }: { session: any }) {
         .select("*")
         .eq("auth_user_id", session.user.id)
         .maybeSingle();
-      if (data) setProfile(data);
+      if (data) {
+        setProfile(data);
+        onProfileUpdate(data);
+      }
     } catch (err: any) {
       console.error("Error updating settings:", err);
       toast.error(err.message || "Failed to update settings.");

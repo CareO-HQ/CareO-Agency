@@ -31,9 +31,11 @@ const hoursData = [
 ];
 
 export default function DashboardTab({ 
-  onNavigate 
+  onNavigate,
+  supervisorProfile 
 }: { 
-  onNavigate: (tab: string) => void 
+  onNavigate: (tab: string) => void;
+  supervisorProfile: any;
 }) {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -48,28 +50,46 @@ export default function DashboardTab({
     async function loadStats() {
       setLoading(true);
       try {
+        const agencyName = supervisorProfile?.agency_name;
+
         // 1. Available workers
-        const { count: availableCount } = await supabase
+        let availableQuery = supabase
           .from("agency_staff")
           .select("id", { count: "exact", head: true })
           .eq("status", "available");
+        if (agencyName) {
+          availableQuery = availableQuery.eq("agency_name", agencyName);
+        }
+        const { count: availableCount } = await availableQuery;
 
         // 2. Active workers
-        const { count: activeCount } = await supabase
+        let activeQuery = supabase
           .from("agency_staff")
           .select("id", { count: "exact", head: true })
           .eq("status", "active");
+        if (agencyName) {
+          activeQuery = activeQuery.eq("agency_name", agencyName);
+        }
+        const { count: activeCount } = await activeQuery;
 
         // 3. Pending requests
-        const { count: pendingCount } = await supabase
+        let pendingQuery = supabase
           .from("agency_requests")
-          .select("id", { count: "exact", head: true })
+          .select("id, agency_staff!inner(agency_name)", { count: "exact", head: true })
           .eq("status", "pending");
+        if (agencyName) {
+          pendingQuery = pendingQuery.eq("agency_staff.agency_name", agencyName);
+        }
+        const { count: pendingCount } = await pendingQuery;
 
         // 4. Care homes count
-        const { data: careHomesData } = await supabase
+        let careHomesQuery = supabase
           .from("agency_requests")
-          .select("care_home_id");
+          .select("care_home_id, agency_staff!inner(agency_name)");
+        if (agencyName) {
+          careHomesQuery = careHomesQuery.eq("agency_staff.agency_name", agencyName);
+        }
+        const { data: careHomesData } = await careHomesQuery;
 
         const uniqueCareHomes = new Set((careHomesData || []).map(r => r.care_home_id));
 
@@ -81,15 +101,19 @@ export default function DashboardTab({
         });
 
         // 5. Fetch recent requests as activity
-        const { data: activities, error } = await supabase
+        let activitiesQuery = supabase
           .from("agency_requests")
           .select(`
             id, status, created_at,
-            agency_staff:agency_staff_id (name, role),
+            agency_staff:agency_staff_id!inner(name, role, agency_name),
             care_home_id
           `)
           .order("created_at", { ascending: false })
           .limit(5);
+        if (agencyName) {
+          activitiesQuery = activitiesQuery.eq("agency_staff.agency_name", agencyName);
+        }
+        const { data: activities, error } = await activitiesQuery;
 
         if (!error && activities) {
           // Resolve Care Home names using CareO database directly
@@ -130,7 +154,7 @@ export default function DashboardTab({
     }
 
     loadStats();
-  }, [supabase]);
+  }, [supabase, supervisorProfile]);
 
   return (
     <div className="space-y-8 font-sans">

@@ -22,6 +22,7 @@ export default function Home() {
   const [userRole, setUserRole] = useState<"supervisor" | "nurse" | "care_assistant" | null>(null);
   const [staffStatus, setStaffStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [supervisorProfile, setSupervisorProfile] = useState<any>(null);
 
   useEffect(() => {
     // 1. Get current session
@@ -41,6 +42,7 @@ export default function Home() {
         fetchUserRole(session.user.email || "");
       } else {
         setUserRole(null);
+        setSupervisorProfile(null);
         setLoading(false);
       }
     });
@@ -52,7 +54,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from("agency_staff")
-        .select("role, status")
+        .select("*")
         .eq("email", email)
         .single();
 
@@ -60,15 +62,20 @@ export default function Home() {
         // Fallback check user metadata
         const { data: { user } } = await supabase.auth.getUser();
         const metaRole = user?.user_metadata?.role;
-        if (metaRole === "supervisor" || metaRole === "nurse" || metaRole === "care_assistant") {
-          setUserRole(metaRole);
-        } else {
-          // Default to supervisor for first user
-          setUserRole("supervisor");
-        }
+        const agencyName = user?.user_metadata?.agency_name;
+        const fallbackProfile = {
+          role: metaRole || "supervisor",
+          status: "available",
+          email: email,
+          name: user?.user_metadata?.name || email.split("@")[0],
+          agency_name: agencyName || ""
+        };
+        setUserRole(fallbackProfile.role as any);
+        setSupervisorProfile(fallbackProfile);
       } else {
         setUserRole(data.role as any);
         setStaffStatus(data.status);
+        setSupervisorProfile(data);
       }
     } catch (err) {
       console.error(err);
@@ -279,11 +286,16 @@ export default function Home() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.15 }}
             >
-              {activeTab === "dashboard" && <DashboardTab onNavigate={setActiveTab} />}
-              {activeTab === "staff" && <StaffTab />}
-              {activeTab === "requests" && <CareHomesTab />}
-              {activeTab === "scheduling" && <SchedulingTab />}
-              {activeTab === "settings" && <SettingsTab session={session} />}
+              {activeTab === "dashboard" && <DashboardTab onNavigate={setActiveTab} supervisorProfile={supervisorProfile} />}
+              {activeTab === "staff" && <StaffTab supervisorProfile={supervisorProfile} />}
+              {activeTab === "requests" && <CareHomesTab supervisorProfile={supervisorProfile} />}
+              {activeTab === "scheduling" && <SchedulingTab supervisorProfile={supervisorProfile} />}
+              {activeTab === "settings" && (
+                <SettingsTab 
+                  session={session} 
+                  onProfileUpdate={(updatedProfile) => setSupervisorProfile(updatedProfile)} 
+                />
+              )}
               {activeTab === "workflow" && <WorkflowTab />}
             </motion.div>
           </AnimatePresence>

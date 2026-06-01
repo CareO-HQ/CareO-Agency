@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Calendar, Plus, Clock, MapPin, CheckCircle, HelpCircle, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
-export default function SchedulingTab() {
+export default function SchedulingTab({ supervisorProfile }: { supervisorProfile: any }) {
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -30,22 +30,34 @@ export default function SchedulingTab() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      const agencyName = supervisorProfile?.agency_name;
+
       // 1. Fetch Care Homes from CareO
       const { data: homes } = await supabase.from("care_homes").select("id, name, organization_id");
       setCareHomes(homes || []);
 
-      // 2. Fetch All Agency Staff (nurses and assistants)
-      const { data: staff } = await supabase.from("agency_staff").select("id, name, role");
+      // 2. Fetch All Agency Staff (nurses and assistants) belonging to this agency
+      let staffQuery = supabase.from("agency_staff").select("id, name, role");
+      if (agencyName) {
+        staffQuery = staffQuery.eq("agency_name", agencyName);
+      }
+      const { data: staff } = await staffQuery;
       setStaffList(staff || []);
 
-      // 3. Fetch shifts list
-      const { data: shiftsData, error } = await supabase
+      // 3. Fetch shifts list filtered by agency
+      let shiftsQuery = supabase
         .from("agency_shifts")
         .select(`
           *,
-          agency_staff:agency_staff_id (name, role)
+          agency_staff:agency_staff_id!inner(name, role, agency_name)
         `)
         .order("start_time", { ascending: true });
+      
+      if (agencyName) {
+        shiftsQuery = shiftsQuery.eq("agency_staff.agency_name", agencyName);
+      }
+      
+      const { data: shiftsData, error } = await shiftsQuery;
 
       if (error) throw error;
 
@@ -79,7 +91,7 @@ export default function SchedulingTab() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [supabase, supervisorProfile]);
 
   useEffect(() => {
     loadData();
