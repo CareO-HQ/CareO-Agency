@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Send, Building, ShieldCheck, MailOpen, UserMinus, FileText, CheckCircle2, Clock } from "lucide-react";
 import { toast } from "sonner";
+import { diagnoseLinkCode } from "@/app/actions/auth-actions";
 
 export default function CareHomesTab() {
   const [loading, setLoading] = useState(true);
@@ -129,6 +130,31 @@ export default function CareHomesTab() {
 
       if (fetchError) throw fetchError;
       if (!home) {
+        // Run diagnosis server action to identify why it wasn't found
+        try {
+          const diagnosis = await diagnoseLinkCode(linkCodeInput);
+          if (diagnosis.found) {
+            console.error(
+              `[Link Code Diagnosis] Code: "${linkCodeInput}"\n` +
+              `Exact Reason: The care home "${diagnosis.homeName}" exists in the database, ` +
+              `but Row-Level Security (RLS) policies blocked this client from selecting it.`
+            );
+          } else if (diagnosis.error) {
+            console.error(
+              `[Link Code Diagnosis] Code: "${linkCodeInput}"\n` +
+              `Exact Reason: Failed to verify database records due to error: ${diagnosis.error}`
+            );
+          } else {
+            console.error(
+              `[Link Code Diagnosis] Code: "${linkCodeInput}"\n` +
+              `Exact Reason: No care home with this link code exists in the database. ` +
+              `Confirm that the link code is correct in the CareO portal and both portals point to the same database instance.`
+            );
+          }
+        } catch (diagErr) {
+          console.error("[Link Code Diagnosis] Failed to run diagnosis action:", diagErr);
+        }
+
         toast.error("Invalid link code. Care home not found.");
         return;
       }

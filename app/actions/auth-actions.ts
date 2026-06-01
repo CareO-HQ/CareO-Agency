@@ -59,3 +59,54 @@ export async function createAgencyStaffAuthOnly(data: {
     return { success: false, error: error.message || "Failed to create staff auth account" };
   }
 }
+
+/**
+ * Checks if an agency name already exists in the agency_staff database table.
+ * It uses ILIKE for case-insensitive matching.
+ */
+export async function checkAgencyNameExists(agencyName: string, excludeSupervisorId?: string) {
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    
+    let query = supabaseAdmin
+      .from("agency_staff")
+      .select("id")
+      .ilike("agency_name", agencyName.trim());
+
+    if (excludeSupervisorId) {
+      query = query.neq("id", excludeSupervisorId);
+    }
+
+    const { data, error } = await query.limit(1);
+
+    if (error) throw error;
+    return { exists: (data && data.length > 0) || false };
+  } catch (error: any) {
+    console.error("Error checking agency name existence:", error);
+    return { error: error.message || "Failed to check agency name" };
+  }
+}
+
+/**
+ * Diagnoses why a care home link code failed to retrieve a care home on the client.
+ * Differentiates between missing records and Row-Level Security (RLS) blockage.
+ */
+export async function diagnoseLinkCode(linkCode: string) {
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    
+    // Fetch using high-privilege admin client to bypass RLS
+    const { data: home, error } = await supabaseAdmin
+      .from("care_homes")
+      .select("id, name")
+      .eq("agency_link_code", linkCode)
+      .maybeSingle();
+
+    if (error) throw error;
+    return { found: !!home, homeName: home?.name || null };
+  } catch (error: any) {
+    console.error("Error diagnosing link code:", error);
+    return { error: error.message || "Failed to query care homes via admin client" };
+  }
+}
+

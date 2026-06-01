@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck, Building, User, Mail, Phone, Save } from "lucide-react";
 import { toast } from "sonner";
+import { checkAgencyNameExists } from "@/app/actions/auth-actions";
 
 export default function SettingsTab({ session }: { session: any }) {
   const [loading, setLoading] = useState(true);
@@ -74,6 +75,19 @@ export default function SettingsTab({ session }: { session: any }) {
 
     setSaving(true);
     try {
+      // Validate uniqueness (excluding the current supervisor profile ID if it exists)
+      const checkRes = await checkAgencyNameExists(agencyName, profile?.id);
+      if (checkRes.error) {
+        toast.error(checkRes.error);
+        setSaving(false);
+        return;
+      }
+      if (checkRes.exists) {
+        toast.error("An agency with this name already exists. Please choose a different name.");
+        setSaving(false);
+        return;
+      }
+
       const payload: any = {
         auth_user_id: session.user.id,
         email: session.user.email,

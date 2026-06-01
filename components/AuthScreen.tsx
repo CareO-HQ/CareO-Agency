@@ -7,8 +7,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, Mail, Lock, User, Phone, CheckCircle } from "lucide-react";
+import { ShieldCheck, Mail, Lock, User, Phone, CheckCircle, Building } from "lucide-react";
 import { toast } from "sonner";
+import { checkAgencyNameExists } from "@/app/actions/auth-actions";
 
 export default function AuthScreen({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,6 +20,7 @@ export default function AuthScreen({ onAuthSuccess }: { onAuthSuccess: () => voi
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [agencyName, setAgencyName] = useState("");
   const role: "supervisor" | "nurse" | "care_assistant" = "supervisor";
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,6 +49,25 @@ export default function AuthScreen({ onAuthSuccess }: { onAuthSuccess: () => voi
           return;
         }
 
+        if (!agencyName.trim()) {
+          toast.error("Please enter an agency name.");
+          setLoading(false);
+          return;
+        }
+
+        // Check if agency name is already taken
+        const checkRes = await checkAgencyNameExists(agencyName);
+        if (checkRes.error) {
+          toast.error(checkRes.error);
+          setLoading(false);
+          return;
+        }
+        if (checkRes.exists) {
+          toast.error("An agency with this name already exists. Please choose a different name.");
+          setLoading(false);
+          return;
+        }
+
         // 1. Create auth user with metadata (client-side signup)
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
@@ -56,6 +77,7 @@ export default function AuthScreen({ onAuthSuccess }: { onAuthSuccess: () => voi
               name,
               role,
               is_agency_staff: true,
+              agency_name: agencyName.trim(),
             },
           },
         });
@@ -73,6 +95,7 @@ export default function AuthScreen({ onAuthSuccess }: { onAuthSuccess: () => voi
               role: role,
               phone: phone,
               status: "available",
+              agency_name: agencyName.trim(),
               skills: (role as string) === "nurse" ? ["Clinical Care", "Meds Administration"] : ["Personal Care", "Daily Living Help"],
               certifications: (role as string) === "nurse" ? ["NMC Registration"] : ["NVQ Level 2"],
               compliance_documents: [
@@ -173,6 +196,24 @@ export default function AuthScreen({ onAuthSuccess }: { onAuthSuccess: () => voi
                   />
                 </div>
               </div>
+
+              {/* Agency Name field for Signup */}
+              {!isLogin && (
+                <div className="space-y-1">
+                  <Label htmlFor="agencyName" className="text-[11px] tracking-[0.05em] uppercase font-bold text-slate-600">Staffing Agency Name *</Label>
+                  <div className="relative">
+                    <Building className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="agencyName"
+                      placeholder="e.g. Care Agency Co."
+                      value={agencyName}
+                      onChange={(e) => setAgencyName(e.target.value)}
+                      className="pl-10 bg-slate-50/50 rounded-full h-10 border-slate-200 focus:bg-white text-xs"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Phone field for Signup */}
               {!isLogin && (
