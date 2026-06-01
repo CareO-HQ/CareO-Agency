@@ -1,0 +1,52 @@
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+/**
+ * Format a role name for display (e.g., "care_assistant" -> "Care Assistant")
+ */
+export function formatRoleName(role: string): string {
+  if (!role) return "";
+  return role
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+// dateOfBirth is like 2025-08-15
+export function getAge(dateOfBirth: string) {
+  const today = new Date();
+  const birthDate = new Date(dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+export function getColorForBadge(value: string): string {
+  const colors = [
+    "bg-blue-50 text-blue-800 border-blue-300",
+    "bg-red-50 text-red-800 border-red-300",
+    "bg-pink-50 text-pink-800 border-pink-300",
+    "bg-indigo-50 text-indigo-800 border-indigo-300",
+    "bg-teal-50 text-teal-800 border-teal-300",
+    "bg-cyan-50 text-cyan-800 border-cyan-300",
+    "bg-lime-50 text-lime-800 border-lime-300",
+    "bg-emerald-50 text-emerald-800 border-emerald-300"
+  ];
+
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+}
