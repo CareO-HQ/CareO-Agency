@@ -9,27 +9,6 @@ import { Users, UserPlus, Building, Clock, ClipboardList, Send, Calendar, Play }
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { toast } from "sonner";
 
-// Mock stats for chart visualization in local dev
-const chartData = [
-  { name: "Mon", shifts: 8, completed: 8 },
-  { name: "Tue", shifts: 12, completed: 10 },
-  { name: "Wed", shifts: 15, completed: 15 },
-  { name: "Thu", shifts: 11, completed: 9 },
-  { name: "Fri", shifts: 18, completed: 16 },
-  { name: "Sat", shifts: 22, completed: 22 },
-  { name: "Sun", shifts: 19, completed: 19 }
-];
-
-const hoursData = [
-  { name: "Mon", hours: 64 },
-  { name: "Tue", hours: 96 },
-  { name: "Wed", hours: 120 },
-  { name: "Thu", hours: 88 },
-  { name: "Fri", hours: 144 },
-  { name: "Sat", hours: 176 },
-  { name: "Sun", hours: 152 }
-];
-
 export default function DashboardTab({ 
   onNavigate,
   supervisorProfile 
@@ -45,6 +24,26 @@ export default function DashboardTab({
     careHomesCount: 0
   });
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
+
+  const [chartData, setChartData] = useState<any[]>([
+    { name: "Mon", shifts: 0, completed: 0 },
+    { name: "Tue", shifts: 0, completed: 0 },
+    { name: "Wed", shifts: 0, completed: 0 },
+    { name: "Thu", shifts: 0, completed: 0 },
+    { name: "Fri", shifts: 0, completed: 0 },
+    { name: "Sat", shifts: 0, completed: 0 },
+    { name: "Sun", shifts: 0, completed: 0 }
+  ]);
+
+  const [hoursData, setHoursData] = useState<any[]>([
+    { name: "Mon", hours: 0 },
+    { name: "Tue", hours: 0 },
+    { name: "Wed", hours: 0 },
+    { name: "Thu", hours: 0 },
+    { name: "Fri", hours: 0 },
+    { name: "Sat", hours: 0 },
+    { name: "Sun", hours: 0 }
+  ]);
 
   useEffect(() => {
     async function loadStats() {
@@ -145,6 +144,87 @@ export default function DashboardTab({
             })
           })));
         }
+
+        // 6. Fetch shifts data for the current week to populate graphs dynamically
+        const nowForWeek = new Date();
+        const currentDay = nowForWeek.getDay(); // 0 is Sun, 1 is Mon...
+        const distanceToMon = currentDay === 0 ? -6 : 1 - currentDay;
+        
+        const startOfWeek = new Date(nowForWeek);
+        startOfWeek.setDate(nowForWeek.getDate() + distanceToMon);
+        startOfWeek.setHours(0, 0, 0, 0);
+        
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+        let shiftsQuery = supabase
+          .from("agency_shifts")
+          .select(`
+            id, start_time, end_time, status, check_in_time, check_out_time,
+            agency_staff:agency_staff_id!inner(agency_name)
+          `)
+          .gte("start_time", startOfWeek.toISOString())
+          .lt("start_time", endOfWeek.toISOString());
+
+        if (agencyName) {
+          shiftsQuery = shiftsQuery.eq("agency_staff.agency_name", agencyName);
+        }
+
+        const { data: dbShifts } = await shiftsQuery;
+
+        const newChartData = [
+          { name: "Mon", shifts: 0, completed: 0 },
+          { name: "Tue", shifts: 0, completed: 0 },
+          { name: "Wed", shifts: 0, completed: 0 },
+          { name: "Thu", shifts: 0, completed: 0 },
+          { name: "Fri", shifts: 0, completed: 0 },
+          { name: "Sat", shifts: 0, completed: 0 },
+          { name: "Sun", shifts: 0, completed: 0 }
+        ];
+
+        const newHoursData = [
+          { name: "Mon", hours: 0 },
+          { name: "Tue", hours: 0 },
+          { name: "Wed", hours: 0 },
+          { name: "Thu", hours: 0 },
+          { name: "Fri", hours: 0 },
+          { name: "Sat", hours: 0 },
+          { name: "Sun", hours: 0 }
+        ];
+
+        if (dbShifts) {
+          const dayIndexMap: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+          dbShifts.forEach(shift => {
+            if (!shift.start_time) return;
+            const date = new Date(shift.start_time);
+            const jsDay = date.getDay();
+            const index = dayIndexMap[jsDay];
+            
+            if (index !== undefined) {
+              // Increment shifts scheduled
+              newChartData[index].shifts += 1;
+              
+              // Increment completed if shift status is completed
+              if (shift.status === "completed") {
+                newChartData[index].completed += 1;
+              }
+              
+              // Calculate hours worked
+              let hours = 0;
+              if (shift.check_in_time && shift.check_out_time) {
+                const diffMs = new Date(shift.check_out_time).getTime() - new Date(shift.check_in_time).getTime();
+                hours = Math.max(0, diffMs / (1000 * 60 * 60));
+              } else if (shift.start_time && shift.end_time) {
+                const diffMs = new Date(shift.end_time).getTime() - new Date(shift.start_time).getTime();
+                hours = Math.max(0, diffMs / (1000 * 60 * 60));
+              }
+              newHoursData[index].hours += Math.round(hours * 10) / 10;
+            }
+          });
+        }
+
+        setChartData(newChartData);
+        setHoursData(newHoursData);
 
       } catch (err: any) {
         console.error("Failed to load dashboard metrics:", err);
@@ -313,7 +393,7 @@ export default function DashboardTab({
                 <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
                 <Tooltip />
                 <Bar dataKey="shifts" name="Scheduled" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="completed" name="Completed" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="completed" name="Completed" fill="var(--primary)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -335,7 +415,7 @@ export default function DashboardTab({
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
                 <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
                 <Tooltip />
-                <Area type="monotone" dataKey="hours" name="Total Hours" stroke="#0d9488" fillOpacity={0.08} fill="#0d9488" strokeWidth={1.5} />
+                <Area type="monotone" dataKey="hours" name="Total Hours" stroke="var(--primary)" fillOpacity={0.08} fill="var(--primary)" strokeWidth={1.5} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>

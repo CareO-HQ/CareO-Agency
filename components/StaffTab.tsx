@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { createAgencyStaffAuthOnly } from "@/app/actions/auth-actions";
+import { createAgencyStaff, deleteAgencyStaff } from "@/app/actions/auth-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, UserPlus, FileText, CheckCircle, AlertTriangle, Calendar, Award } from "lucide-react";
+import { Search, UserPlus, FileText, CheckCircle, AlertTriangle, Calendar, Award, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function StaffTab({ supervisorProfile }: { supervisorProfile: any }) {
@@ -17,6 +17,8 @@ export default function StaffTab({ supervisorProfile }: { supervisorProfile: any
   const [staffList, setStaffList] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
+  const [deletingStaffId, setDeletingStaffId] = useState<string | null>(null);
+  const [staffToDelete, setStaffToDelete] = useState<any | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("all");
 
   const supervisorId = supervisorProfile?.id;
@@ -82,42 +84,27 @@ export default function StaffTab({ supervisorProfile }: { supervisorProfile: any
       const skillsArray = newStaff.skills.split(",").map(s => s.trim()).filter(Boolean);
       const certsArray = newStaff.certifications.split(",").map(c => c.trim()).filter(Boolean);
 
-      // 1. Insert into public.agency_staff on the client side (governed by RLS - supervisors can insert staff)
-      const { error: dbError } = await supabase
-        .from("agency_staff")
-        .insert({
-          name: newStaff.name,
-          email: newStaff.email.trim(),
-          role: newStaff.role,
-          phone: newStaff.phone,
-          status: "available",
-          skills: skillsArray,
-          certifications: certsArray,
-          supervisor_id: supervisorId,
-          agency_name: supervisorAgencyName,
-          compliance_documents: [
-            { type: "DBS Check", status: "verified", date: new Date().toISOString() },
-            { type: "Right to Work", status: "verified", date: new Date().toISOString() }
-          ],
-          availability: [
-            { day: "Monday", available: true },
-            { day: "Tuesday", available: true },
-            { day: "Wednesday", available: true },
-            { day: "Thursday", available: true },
-            { day: "Friday", available: true },
-            { day: "Saturday", available: false },
-            { day: "Sunday", available: false }
-          ]
-        });
+      // Get user session to retrieve the access token for secure Server Action call
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (dbError) throw dbError;
+      if (!token) {
+        toast.error("You must be logged in to perform this action.");
+        return;
+      }
 
-      // 2. Create the auth credentials on the backend (auth only, no RLS override on database tables)
-      const result = await createAgencyStaffAuthOnly({
+      // Create both the auth credentials and the database profile row securely via Server Action (bypassing RLS)
+      const result = await createAgencyStaff({
+        token,
         name: newStaff.name,
         email: newStaff.email.trim(),
         role: newStaff.role,
-        password: newStaff.password
+        password: newStaff.password,
+        phone: newStaff.phone,
+        skills: skillsArray,
+        certifications: certsArray,
+        supervisorId: supervisorId,
+        agencyName: supervisorAgencyName
       });
 
       if (!result.success) {
@@ -139,6 +126,32 @@ export default function StaffTab({ supervisorProfile }: { supervisorProfile: any
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to add staff member.");
+    }
+  };
+
+  const handleDeleteStaff = async (staff: any) => {
+    setDeletingStaffId(staff.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error("You must be logged in to perform this action.");
+        return;
+      }
+
+      const result = await deleteAgencyStaff({ token, staffId: staff.id });
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      toast.success(`${staff.name} has been permanently deleted.`);
+      setStaffToDelete(null);
+      await fetchStaff();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to delete staff member.");
+    } finally {
+      setDeletingStaffId(null);
     }
   };
 
@@ -345,6 +358,7 @@ export default function StaffTab({ supervisorProfile }: { supervisorProfile: any
                   <TableHead className="text-[10px] tracking-[0.08em] uppercase font-bold text-slate-400">Skills & Certs</TableHead>
                   <TableHead className="text-[10px] tracking-[0.08em] uppercase font-bold text-slate-400">Compliance Status</TableHead>
                   <TableHead className="text-[10px] tracking-[0.08em] uppercase font-bold text-slate-400">Shift Status</TableHead>
+                  <TableHead className="text-[10px] tracking-[0.08em] uppercase font-bold text-slate-400 text-right pr-6">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -394,6 +408,18 @@ export default function StaffTab({ supervisorProfile }: { supervisorProfile: any
                         {staff.status}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-right pr-6">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setStaffToDelete(staff)}
+                        disabled={deletingStaffId === staff.id}
+                        className="text-red-600 hover:text-red-700 border-red-100 hover:bg-red-50 rounded-full px-3 text-[10px] h-8 font-semibold uppercase tracking-wider gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -401,6 +427,49 @@ export default function StaffTab({ supervisorProfile }: { supervisorProfile: any
           )}
         </CardContent>
       </Card>
+      {/* Delete Confirmation Dialog */}
+      {staffToDelete && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md shadow-xl border-slate-100 bg-white rounded-3xl overflow-hidden">
+            <CardHeader className="pt-6 pb-4 border-b border-slate-50 px-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold text-slate-800 font-sans">Delete Staff Member</CardTitle>
+                  <p className="text-xs text-slate-500 mt-0.5">This action cannot be undone.</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="px-6 py-5">
+              <p className="text-sm text-slate-700">
+                Are you sure you want to permanently delete <span className="font-bold text-slate-900">{staffToDelete.name}</span>?
+              </p>
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                This will remove their login credentials, profile, and all associated care home requests and shift records.
+              </p>
+            </CardContent>
+            <div className="flex items-center justify-end gap-2.5 p-4 border-t border-slate-100 bg-slate-50/50 px-6">
+              <Button
+                variant="outline"
+                className="rounded-full px-5 text-xs h-9"
+                onClick={() => setStaffToDelete(null)}
+                disabled={deletingStaffId === staffToDelete.id}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white rounded-full px-5 text-xs h-9 font-semibold gap-1.5"
+                onClick={() => handleDeleteStaff(staffToDelete)}
+                disabled={deletingStaffId === staffToDelete.id}
+              >
+                {deletingStaffId === staffToDelete.id ? "Deleting..." : "Delete Permanently"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
